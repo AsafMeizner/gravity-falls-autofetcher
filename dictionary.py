@@ -4,44 +4,18 @@ import base64
 from bs4 import BeautifulSoup
 import mimetypes
 import logging
+import nltk
+from nltk.corpus import words
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Configure logging
-logging.basicConfig(filename="script_log.txt", level=logging.INFO, format="%(asctime)s - %(message)s")
+# Ensure the words corpus is downloaded
+nltk.download('words')
 
-# Gravity Falls-related word list
-word_list = [
-    "Arc", "Beam", "Blade", "Blaze", "Bolt", "Burst", 
-    "Charm", "Chill", "Clash", "Clue", "Crux", "Crypt", 
-    "Dive", "Drift", "Echo", "Fang", "Fate", "Flick", 
-    "Flux", "Fury", "Grit", "Haze", "Hint", "Hollow", 
-    "Hush", "Jinx", "Key", "Loom", "Mask", "Maze", 
-    "Mist", "Myth", "Node", "Omen", "Orb", "Pact", 
-    "Peak", "Phase", "Pierce", "Pine", "Pluck", "Prism", 
-    "Quake", "Rift", "Riddle", "Rift", "Rune", "Shard", 
-    "Shift", "Shine", "Shroud", "Sleek", "Smite", "Snipe", 
-    "Snare", "Soar", "Sonic", "Spell", "Spire", "Sting", 
-    "Stone", "Stray", "Surge", "Thorn", "Thrust", "Trail", 
-    "Trek", "Veil", "Vex", "Void", "Warp", "Whip", 
-    "Wisp", "Wish", "Wraith", "Writ", "Zeal", "Zap", 
-    "Zap", "Zone", "Zoom", "Bolt", "Brand", "Brave", 
-    "Brisk", "Burn", "Calm", "Charm", "Chase", "Chill", 
-    "Claw", "Cloak", "Crest", "Crown", "Crypt", "Dawn", 
-    "Daze", "Dread", "Duel", "Edge", "Ember", "Fable", 
-    "Fate", "Fawn", "Faze", "Fist", "Flame", "Flare", 
-    "Flint", "Flux", "Foe", "Fury", "Gale", "Gaze", 
-    "Gleam", "Glimpse", "Glow", "Grit", "Grove", "Haze", 
-    "Hush", "Jade", "Jet", "Jolt", "Loom", "Lush", 
-    "Muse", "Nexus", "Nova", "Nudge", "Oath", "Onyx", 
-    "Pact", "Pike", "Pine", "Ploy", "Plume", "Poise", 
-    "Prowl", "Quake", "Quartz", "Quest", "Raze", "Reap", 
-    "Rift", "Rime", "Roam", "Rush", "Rune", "Rust", 
-    "Sage", "Shade", "Shift", "Shine", "Shock", "Shroud", 
-    "Sleek", "Snare", "Soar", "Spine", "Sprout", "Stark", 
-    "Sting", "Stone", "Surge", "Thorn", "Thrust", "Tide", 
-    "Trail", "Trek", "Veil", "Vex", "Vibe", "Wane", 
-    "Wisp", "Wish", "Wit", "Writ", "Zeal", "Zap"
-]
+# Configure logging to only log errors and warnings
+logging.basicConfig(filename="script_log.txt", level=logging.WARNING, format="%(asctime)s - %(message)s")
 
+# List of words from the nltk corpus
+word_list = words.words()
 
 # URL and headers
 url = "https://codes.thisisnotawebsitedotcom.com/"
@@ -74,7 +48,6 @@ def save_file(directory_name, content_url, file_type=None, file_data=None):
             file_path = os.path.join(directory_name, file_name)
             if os.path.exists(file_path):
                 logging.info(f"File {file_name} already exists in directory {directory_name}, skipping download.")
-                print(f"File {file_name} already exists in directory {directory_name}, skipping download.")
                 return
             if not file_data:
                 response = requests.get(content_url, headers=headers)
@@ -83,10 +56,8 @@ def save_file(directory_name, content_url, file_type=None, file_data=None):
         with open(os.path.join(directory_name, file_name), "wb") as file:
             file.write(file_data)
         logging.info(f"Saved {file_name} in directory: {directory_name}")
-        print(f"Saved {file_name} in directory: {directory_name}")
     except Exception as e:
         logging.error(f"Failed to save file from {content_url}: {e}")
-        print(f"Failed to save file from {content_url}: {e}")
 
 # Function to send the POST request and save successful responses
 def send_post_request_and_save(code):
@@ -100,34 +71,26 @@ def send_post_request_and_save(code):
         
         # Only process if the response status code is 200
         if response.status_code == 200:
-            # Determine content type
             content_type = response.headers.get('Content-Type', '').lower()
             directory_name = code.replace(" ", "_")
             os.makedirs(directory_name, exist_ok=True)
 
             if 'image/' in content_type:
-                # Handle if the content is an image but was not in an <img> tag
                 extension = mimetypes.guess_extension(content_type.split(";")[0])
                 file_name = f"image{extension}"
                 save_file(directory_name, content_url=file_name, file_data=response.content)
             else:
-                # Save the raw content in a text file
                 response_text_path = os.path.join(directory_name, "response.txt")
                 with open(response_text_path, "wb") as file:
-                    file.write(response.content)  # Write the raw binary content
-                print(f"Saved response content as response.txt in directory: {directory_name}")
-                logging.info(f"Saved response content as response.txt in directory: {directory_name}")
-
-                # Parse HTML to find images, videos, and audio
+                    file.write(response.content)
+                
                 soup = BeautifulSoup(response.text, "html.parser")
                 
-                # Find all <img> tags
                 for img_tag in soup.find_all("img"):
                     img_url = img_tag.get("src")
                     if img_url:
                         save_file(directory_name, img_url, "png")
                 
-                # Find all <video> tags
                 for video_tag in soup.find_all("video"):
                     source_tag = video_tag.find("source")
                     if source_tag:
@@ -135,7 +98,6 @@ def send_post_request_and_save(code):
                         if video_url:
                             save_file(directory_name, video_url, "mp4")
                 
-                # Find all <audio> tags
                 for audio_tag in soup.find_all("audio"):
                     source_tag = audio_tag.find("source")
                     if source_tag:
@@ -143,19 +105,23 @@ def send_post_request_and_save(code):
                         if audio_url:
                             save_file(directory_name, audio_url, "mp3")
                 
-                # Append the name to a main text file listing successful responses
                 with open("successful_responses.txt", "a", encoding="utf-8") as main_file:
                     main_file.write(f"{code}\n")
                 
                 logging.info(f"Saved response for word: {code}")
-                print(f"Saved response for word: {code}")
         else:
             logging.warning(f"Non-200 status code {response.status_code} for word: {code}. Skipping save.")
-            print(f"Non-200 status code {response.status_code} for word: {code}. Skipping save.")
     except Exception as e:
         logging.error(f"Failed to process word {code}: {e}")
-        print(f"Failed to process word {code}: {e}")
 
-# Iterate over the word list and send requests
-for word in word_list:
-    send_post_request_and_save(word)
+# Function to handle concurrent requests
+def process_words_concurrently(words_to_process):
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(send_post_request_and_save, word) for word in words_to_process]
+        for future in as_completed(futures):
+            future.result()
+
+# Run through all words in the list, processing them in batches
+batch_size = 100  # Adjust batch size as needed
+for i in range(0, len(word_list), batch_size):
+    process_words_concurrently(word_list[i:i + batch_size])
